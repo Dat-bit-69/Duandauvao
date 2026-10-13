@@ -109,7 +109,7 @@ void app_main(void)
         return;
     }
 
-
+//
     vTaskDelay(pdMS_TO_TICKS(180));  //đợi max 180ms để vào chế độ đo
 
     float lux = 0.0f;
