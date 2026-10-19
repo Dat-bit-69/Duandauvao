@@ -21,8 +21,10 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_FAIL_BIT      BIT1
 
 static int s_retry_num = 0;
-
-// Hàm xử lý sự kiện WiFi và IP  --- Chạy ngầm tách khỏi main
+/**
+ * @brief Hàm xử lý sự kiện WiFi và IP
+ */
+// --- Chạy ngầm tách khỏi main
 static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)  
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -46,7 +48,9 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
     }
 }
 
-// Hàm khởi tạo và kết nối WiFi
+/**
+ * @brief Khởi tạo và kết nối wifi
+ */
 void wifi_init_sta(void)
 {
     s_wifi_event_group = xEventGroupCreate();
