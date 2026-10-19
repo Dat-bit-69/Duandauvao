@@ -39,7 +39,7 @@ esp_err_t khoitao_bh1750(i2c_master_bus_handle_t bus_handle)
 
     // 2. Bật nguồn và gửi lệnh chọn chế độ đo
     uint8_t lenh = BH1750_POWERON;
-    err = i2c_master_transmit(bh1750_handle, &lenh, 1, pdMS_TO_TICKS(1000));
+    err = i2c_master_transmit(bh1750_handle, &lenh, 1, pdMS_TO_TICKS(1000));  //1 byte
     if (err != ESP_OK) {
         return err;
     }

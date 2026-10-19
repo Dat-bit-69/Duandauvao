@@ -4,7 +4,13 @@
 #include "esp_log.h"
 #include "freertos/queue.h"
 #include "esp_system.h"
-#include "bh1750.h" 
+#include "bh1750.h"                       // Thư viện BH1750
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "freertos/event_groups.h"
+#include "esp_wifi.h"
+#include "esp_netif.h"
+#include "wifi_app.h"                     // Thư viện WiFi
 
 static const char *TAG = "BH1750";
 static const char *TAG_SERVER = "SERVER";
@@ -65,6 +71,21 @@ void server_task(void *pvParameters){
  */
 void app_main(void)
 {
+    // 1.Kết nối Wifi
+    // Bắt buộc: Khởi tạo NVS Flash trước khi dùng WiFi
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    // Kết nối WiFi
+    wifi_init_sta();
+
+
+
+    // 2.Khởi tạo I2C và BH1750
     lux_queue = xQueueCreate(5, sizeof(float)); //tạo hàng đợi để lưu giá trị lux
     
     i2c_master_bus_handle_t bus_handle;
@@ -107,3 +128,5 @@ void app_main(void)
     
     vTaskDelete(NULL);  //xóa task main sau khi set up
 }
+
+
