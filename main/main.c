@@ -11,6 +11,9 @@
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "wifi_app.h"                     // Thư viện WiFi
+#include "esp_http_client.h"
+
+#define SERVER_URL "http://192.168.103.104:5000/api/sensor"
 
 static const char *TAG = "BH1750";
 static const char *TAG_SERVER = "SERVER";
@@ -52,6 +55,15 @@ void server_task(void *pvParameters){
     float data;
     char payload[128];  //khai báo chuỗi chứa payload 
 
+    //cấu hình http
+    esp_http_client_config_t config = {
+        .url = SERVER_URL,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 5000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+
     while (1) {
         if (xQueueReceive(lux_queue, &data, portMAX_DELAY) == pdTRUE) {  //chờ vô hạn
             if (data >= 0.0f) {
@@ -62,8 +74,27 @@ void server_task(void *pvParameters){
                 snprintf(payload, sizeof(payload), "{\"lux\": null, \"status\": \"HARDWARE_ERROR\"}");
             }
             ESP_LOGI(TAG_SERVER, "Goi tin: %s", payload);  //in ra terminal chuỗi json
+        
+    
+            esp_http_client_set_url(client, SERVER_URL);
+            esp_http_client_set_method(client, HTTP_METHOD_POST);
+            esp_http_client_set_header(client, "Content-Type", "application/json");
+            esp_http_client_set_post_field(client, payload, strlen(payload));
+
+            //  Gửi HTTP request
+            esp_err_t err = esp_http_client_perform(client);
+            if (err == ESP_OK) {
+                int status_code = esp_http_client_get_status_code(client);
+                ESP_LOGI(TAG_SERVER, "Gui thanh cong! Ma phan hoi (Status): %d", status_code);
+            } else {
+                ESP_LOGE(TAG_SERVER, "Gui that bai! Ma loi: %s", esp_err_to_name(err));
+            }
         }
     }
+
+    // Giải phóng tài nguyên client nếu thoát vòng lặp
+    esp_http_client_cleanup(client);
+    vTaskDelete(NULL);
 }
 
 /**
