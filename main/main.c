@@ -56,10 +56,10 @@ void server_task(void *pvParameters){
     char payload[128];  //khai báo chuỗi chứa payload 
 
     //cấu hình http
-    esp_http_client_config_t config = {
-        .url = SERVER_URL,
-        .method = HTTP_METHOD_POST,
-        .timeout_ms = 5000,
+    esp_http_client_config_t config = {   
+        .url = SERVER_URL,                            //gắn nguyên url
+        .method = HTTP_METHOD_POST,                   //phương thức post
+        .timeout_ms = 5000,                            
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
@@ -75,7 +75,6 @@ void server_task(void *pvParameters){
             }
             ESP_LOGI(TAG_SERVER, "Goi tin: %s", payload);  //in ra terminal chuỗi json
         
-    
             esp_http_client_set_url(client, SERVER_URL);
             esp_http_client_set_method(client, HTTP_METHOD_POST);
             esp_http_client_set_header(client, "Content-Type", "application/json");

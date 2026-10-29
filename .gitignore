@@ -1,0 +1,20 @@
+# ESP-IDF build outputs
+build/
+sdkconfig.old
+dependencies.lock
+managed_components/
+
+# Editor & Tooling
+.vscode/
+.clangd/
+
+# Python cache & virtual environment
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# OS specific files
+.DS_Store
+Thumbs.db

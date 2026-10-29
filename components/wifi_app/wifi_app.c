@@ -9,9 +9,6 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 
-#define WIFI_SSID       "TP-Link_D8AA"
-#define WIFI_PASS       "82160951"
-#define MAXIMUM_RETRY   3
 
 static const char *TAG_WIFI = "WIFI_APP";
 
