@@ -12,39 +12,86 @@
 #include "esp_netif.h"
 #include "wifi_app.h"                     // Thư viện WiFi
 #include "esp_http_client.h"
+#include "esp_timer.h"
+#include <time.h>
+#include <sys/time.h>
 
 #define SERVER_URL "http://192.168.103.104:5000/api/sensor"
 
 static const char *TAG = "BH1750";
 static const char *TAG_SERVER = "SERVER";
 
+typedef struct {
+    float lux;              // Giá trị ánh sáng (hoặc -1.0f, -2.0f nếu lỗi)
+    char timestamp[24];     // Chuỗi thời gian dạng "2026-11-18 19:10:00"
+    bool is_time_valid;     // Cờ báo giờ đã đồng bộ SNTP chuẩn hay chưa
+    int64_t uptime_sec;     // Số giây tính từ lúc ESP32 được cắm điện
+} sensor_data_t;
+
 static QueueHandle_t lux_queue = NULL;
+
+static bool get_current_time_str(char *buffer, size_t max_len)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    // Đọc số giây hiện tại từ bộ đếm RTC bên trong chip ESP32 (mất < 1 micro-giây)
+    time(&now);
+    // Đổi số giây đó sang ngày, tháng, năm, giờ, phút, giây theo múi giờ đã cài
+    localtime_r(&now, &timeinfo);
+
+    // Format thành chuỗi chuẩn MySQL: "2026-11-18 19:13:00"
+    strftime(buffer, max_len, "%Y-%m-%d %H:%M:%S", &timeinfo);
+
+    // Kiểm tra xem năm đã lớn hơn 2024 chưa. 
+    // Nếu chưa sync SNTP lần nào, chip sẽ đếm từ năm 1970 -> trả về false (giờ thô)
+    if (timeinfo.tm_year < (2024 - 1900)) {
+        return false;
+    }
+    return true;
+}
 
 /**
  * @brief Sensor task
  */
 void sensor_task(void *pvParameters)
 {
-    vTaskDelay(pdMS_TO_TICKS(180));  //đợi max 180ms để vào chế độ đo
+    vTaskDelay(pdMS_TO_TICKS(180)); // Đợi BH1750 khởi động xong
+    // Đảm bảo múi giờ Việt Nam luôn đúng kể cả khi chưa kịp kết nối Wi-Fi
+    setenv("TZ", "ICT-7", 1);
+    tzset();
+
     float lux = 0.0f;
-    float error_value = -1.0f; // Giá trị lỗi
-    float value;
+    sensor_data_t packet; // Cái "phong bì" mới chứa cả lux + thời gian
+
+    // Lấy mốc nhịp ban đầu của FreeRTOS để đếm chu kỳ chính xác
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(10000); // Chu kỳ chuẩn 10.000ms (10 giây)
+
     while (1) {
+        // 1. Đọc cảm biến BH1750
         esp_err_t err = bh1750_read_lux(&lux);
         if (err == ESP_OK) {
+            packet.lux = lux;
             ESP_LOGI(TAG, "Cuong do anh sang: %.2f Lux", lux);
-            if (lux_queue != NULL) {
-                value = lux;  
-            }
         } else {
+            packet.lux = -1.0f; // Mã lỗi đọc cảm biến
             ESP_LOGW(TAG, "Doc du lieu tu BH1750 that bai. Ma loi: %s", esp_err_to_name(err));
-            float error_value = -1.0f; // Giá trị lỗi
-            if (lux_queue != NULL) {
-                value = error_value;  
-            }
         }
-        xQueueSend(lux_queue, &value, 0);
-        vTaskDelay(pdMS_TO_TICKS(10000));
+
+        // 2. Chốt ngay mốc thời gian tại đúng khoảnh khắc vừa đo xong
+        packet.is_time_valid = get_current_time_str(packet.timestamp, sizeof(packet.timestamp));
+        // esp_timer_get_time() trả về micro-giây từ lúc boot -> chia 1.000.000 để ra giây
+        packet.uptime_sec = esp_timer_get_time() / 1000000LL;
+        ESP_LOGI(TAG, "Thoi gian do: %s (%s)", 
+                 packet.timestamp, 
+                 packet.is_time_valid ? "Gio chuan" : "Gio tho chua sync");
+
+        // 3. Đẩy cả gói tin (lux + thời gian) vào Queue
+       xQueueSend(lux_queue, &packet, 0);
+
+        // 4. Ngủ đúng phần thời gian còn lại để tròn 10 giây (không bị trôi nhịp)
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
 
@@ -88,6 +135,7 @@ void server_task(void *pvParameters){
             } else {
                 ESP_LOGE(TAG_SERVER, "Gui that bai! Ma loi: %s", esp_err_to_name(err));
             }
+            esp_http_client_close(client);
         }
     }
 
@@ -116,15 +164,21 @@ void app_main(void)
 
 
     // 2.Khởi tạo I2C và BH1750
-    lux_queue = xQueueCreate(5, sizeof(float)); //tạo hàng đợi để lưu giá trị lux
-    
+    lux_queue = xQueueCreate(5, sizeof(sensor_data_t)); //tạo hàng đợi để lưu giá trị lux
+     
     i2c_master_bus_handle_t bus_handle;
     
     xTaskCreatePinnedToCore(server_task, "server_task", 4096, NULL, 5, NULL, 1); //tạo server task chạy trên core 1
 
     // logi:info, logw: warning, loge: error
-    // Khởi tạo I2C bus
-    float errhw = -2.0f;    //mã lỗi phần cứng
+    
+    sensor_data_t errhw = {
+        .lux = -2.0f,
+        .is_time_valid = false,
+        .uptime_sec = esp_timer_get_time() / 1000000LL
+    };
+    errhw.is_time_valid = get_current_time_str(errhw.timestamp, sizeof(errhw.timestamp));  
+
     esp_err_t err = khoitao_i2c(&bus_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Khoi tao I2C that bai. Dung task doc cam bien.");
