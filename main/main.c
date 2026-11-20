@@ -84,7 +84,7 @@ void sensor_task(void *pvParameters)
         // esp_timer_get_time() trả về micro-giây từ lúc boot -> chia 1.000.000 để ra giây
         packet.uptime_sec = esp_timer_get_time() / 1000000LL;
         ESP_LOGI(TAG, "Thoi gian do: %s (%s)", 
-                 packet.timestamp, // lấy biến đếm thời gian từ lúc boot
+                 packet.timestamp, // thời gian từ lúc đo
                  packet.is_time_valid ? "Gio chuan" : "Gio tho chua sync");
 
         // 3. Đẩy cả gói tin (lux + thời gian) vào Queue
@@ -110,7 +110,6 @@ static esp_err_t init_littlefs(void)
         ESP_LOGE(TAG_SERVER, "Khoi tao LittleFS that bai (%s)", esp_err_to_name(ret));
         return ret;
     }
-
     size_t total = 0, used = 0;
     esp_littlefs_info(conf.partition_label, &total, &used);
     ESP_LOGI(TAG_SERVER, "LittleFS san sang! Dung luong: %d / %d bytes", used, total);
@@ -139,7 +138,7 @@ static void save_packet_to_flash(const sensor_data_t *data)
 static void resolve_final_timestamp(const sensor_data_t *data, char *out_json_ts, size_t max_len)
 {
     if (data->is_time_valid) {
-        // Tình huống 1: Lúc đo đã có giờ SNTP chuẩn -> bọc ngoặc kép dùng luôn
+        // Tình huống 1: Lúc đo đã có giờ SNTP chuẩn 
         snprintf(out_json_ts, max_len, "\"%s\"", data->timestamp);
     } 
     else if (boot_epoch_time > 0) {
@@ -211,17 +210,13 @@ static void flush_offline_data(esp_http_client_handle_t client)
     if (stat(OFFLINE_FILE_PATH, &st) != 0) {
         return;
     }
-
     FILE *f = fopen(OFFLINE_FILE_PATH, "rb");
     if (f == NULL) {
         return;
     }
-
     ESP_LOGI(TAG_SERVER, "Phat hien du lieu offline (%ld bytes). Bat dau gui bu...", st.st_size);
-
     sensor_data_t old_data;
     bool all_sent = true;
-
     while (fread(&old_data, sizeof(sensor_data_t), 1, f) == 1) {
         if (!wifi_is_connected() || !send_packet_to_server(client, &old_data)) {
             all_sent = false;
@@ -229,9 +224,7 @@ static void flush_offline_data(esp_http_client_handle_t client)
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-
     fclose(f);
-
     if (all_sent) {
         unlink(OFFLINE_FILE_PATH);
         ESP_LOGI(TAG_SERVER, "Da gui bu xong toan bo du lieu offline va xoa file tam!");
